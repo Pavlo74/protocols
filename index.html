@@ -1,0 +1,708 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Результати змагань</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  :root{
+    --bg:#eef2f4;
+    --surface:#ffffff;
+    --surface-2:#f6f8f9;
+    --ink:#0f2a2e;
+    --ink-soft:#3d5559;
+    --muted:#6b8083;
+    --line:#e2e8ea;
+    --line-soft:#edf1f2;
+    --primary:#0f766e;
+    --primary-dark:#0b5c56;
+    --primary-light:#e3f2ef;
+    --accent:#f5a524;
+    --accent-dark:#c47f14;
+    --accent-light:#fdf1dc;
+    --danger:#dc4b3e;
+    --danger-light:#fce6e3;
+    --good:#1f9d64;
+    --good-light:#e3f7ec;
+    --radius-lg:18px;
+    --radius-md:12px;
+    --radius-sm:9px;
+    --shadow-sm:0 1px 2px rgba(15,42,46,0.06);
+    --shadow-md:0 6px 20px -4px rgba(15,42,46,0.12);
+    --shadow-lg:0 16px 40px -8px rgba(15,42,46,0.22);
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI Variable","Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    background:var(--bg); color:var(--ink); -webkit-font-smoothing:antialiased; -webkit-tap-highlight-color:transparent;
+  }
+  #loading{ display:flex; align-items:center; justify-content:center; height:100vh; flex-direction:column; gap:16px; color:var(--primary-dark); }
+  .spinner{ width:36px;height:36px;border-radius:50%; border:3.5px solid var(--primary-light); border-top-color:var(--primary); animation:spin 0.8s linear infinite; }
+  @keyframes spin{to{transform:rotate(360deg);}}
+  @keyframes fadeUp{ from{ opacity:0; transform:translateY(6px);} to{ opacity:1; transform:translateY(0);} }
+  #app{display:none;}
+
+  header.topbar{
+    background:linear-gradient(150deg,#083b39 0%,var(--primary-dark) 55%,var(--primary) 100%);
+    color:#fff; padding:22px 24px 30px; position:relative; overflow:hidden;
+  }
+  header.topbar::before{
+    content:''; position:absolute; inset:0;
+    background:radial-gradient(circle at 88% -10%, rgba(245,165,36,0.25), transparent 45%),
+      radial-gradient(circle at 8% 120%, rgba(255,255,255,0.08), transparent 40%);
+    pointer-events:none;
+  }
+  .topbar-inner{ position:relative; z-index:1; display:flex; align-items:flex-start; justify-content:space-between; gap:16px; flex-wrap:wrap; }
+  .brand-eyebrow{
+    font-size:12px; letter-spacing:2.5px; text-transform:uppercase; color:var(--accent); font-weight:800; margin:0 0 7px;
+    display:flex; align-items:center; gap:8px;
+  }
+  .brand-eyebrow::before{ content:'🎣'; font-size:13px; }
+  .view-badge{
+    display:inline-flex; align-items:center; gap:5px;
+    background:rgba(245,165,36,0.18); color:var(--accent); border:1px solid rgba(245,165,36,0.4);
+    padding:3px 10px; border-radius:999px; font-size:11px; font-weight:800; letter-spacing:0.3px;
+  }
+  #appTitle{ font-weight:800; letter-spacing:-0.02em; font-size:26px; margin:0; line-height:1.2; }
+  .topbar-actions{ position:relative; z-index:1; display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+  .cloud-status{
+    font-size:11.5px; font-weight:700; padding:5px 10px; border-radius:999px;
+    background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.12); color:rgba(255,255,255,0.75);
+  }
+  .cloud-status.synced{ background:rgba(31,157,100,0.2); border-color:rgba(31,157,100,0.4); color:#a9f0c6; }
+  .cloud-status.connecting{ background:rgba(245,165,36,0.2); border-color:rgba(245,165,36,0.4); color:var(--accent-light); }
+  .cloud-status.error{ background:rgba(220,75,62,0.2); border-color:rgba(220,75,62,0.4); color:#ffc7c0; }
+
+  .navwrap{ background:var(--surface); border-bottom:1px solid var(--line); box-shadow:var(--shadow-sm); position:sticky; top:0; z-index:30; }
+  nav#nav{ display:flex; gap:3px; overflow-x:auto; padding:10px; margin:0 auto; max-width:1900px; width:97%; background:transparent; scrollbar-width:none; }
+  nav#nav::-webkit-scrollbar{ display:none; }
+  .navbtn{
+    flex:0 0 auto; background:transparent; border:none; cursor:pointer; padding:12px 19px; border-radius:999px;
+    font-size:14.5px; font-weight:700; color:var(--ink-soft); white-space:nowrap;
+    transition:background 0.15s ease, color 0.15s ease;
+  }
+  .navbtn:hover{ background:var(--surface-2); color:var(--primary-dark); }
+  .navbtn.active{ background:var(--primary); color:#fff; box-shadow:var(--shadow-sm); }
+
+  main{ max-width:1900px; width:97%; margin:0 auto; padding:22px 0 64px; }
+
+  .card{
+    background:var(--surface); border:1px solid var(--line-soft); border-radius:var(--radius-lg);
+    padding:22px 16px; margin-bottom:18px; box-shadow:var(--shadow-sm); animation:fadeUp 0.25s ease both;
+  }
+  .card h2{
+    font-weight:800; letter-spacing:-0.01em; font-size:20px; color:var(--ink); margin:0 0 6px;
+    display:flex; align-items:center; gap:9px;
+  }
+  .card h2::before{ content:''; width:6px; height:22px; border-radius:4px; background:linear-gradient(180deg,var(--accent),var(--primary)); display:inline-block; }
+  .muted{ color:var(--muted); font-size:14.5px; line-height:1.55; }
+  .warn{ color:var(--danger); font-weight:700; }
+  label{ display:block; font-size:13.5px; font-weight:700; color:var(--ink-soft); margin-bottom:6px; }
+  select{
+    width:100%; padding:13px 14px; border:1.5px solid var(--line); border-radius:var(--radius-sm);
+    font-size:15.5px; background:var(--surface-2); color:var(--ink); font-family:inherit;
+  }
+  select:focus{ outline:none; border-color:var(--primary); background:#fff; box-shadow:0 0 0 3px var(--primary-light); }
+  .row{ display:flex; gap:12px; align-items:flex-end; margin-bottom:12px; }
+
+  button{
+    font-family:inherit; font-size:15px; font-weight:700; cursor:pointer; border-radius:999px;
+    border:1.5px solid var(--line); background:var(--surface); color:var(--ink-soft); padding:13px 21px;
+    transition:transform 0.08s ease, box-shadow 0.15s ease, background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+  }
+  button:hover{ border-color:var(--primary); color:var(--primary-dark); }
+  button:active{ transform:scale(0.97); }
+  button.gold{ background:linear-gradient(135deg,var(--accent),var(--accent-dark)); border-color:var(--accent-dark); color:#3a2705; box-shadow:0 4px 14px -4px rgba(196,127,20,0.55); }
+  button.gold:hover{ filter:brightness(1.05); color:#3a2705; }
+
+  table{ border-collapse:collapse; width:100%; font-size:14.5px; table-layout:fixed; }
+  .table-wrap{ overflow:hidden; border-radius:var(--radius-md); border:1px solid var(--line-soft); }
+  .protocol-table th, .protocol-table td{
+    border-bottom:1px solid var(--line-soft); padding:10px 6px; text-align:center;
+    white-space:normal; word-wrap:break-word; overflow-wrap:break-word; word-break:break-word;
+  }
+  .protocol-table thead th{
+    background:var(--primary-dark); color:#fff; font-size:11.5px; text-transform:uppercase; letter-spacing:0.3px; font-weight:700; border-bottom:none;
+  }
+  .protocol-table td:nth-child(2){ text-align:left; font-weight:700; }
+  .protocol-table tbody tr:hover{ background:var(--surface-2); }
+  .protocol-table td.place{ font-weight:800; background:var(--accent-light); color:var(--accent-dark); border-radius:8px; }
+  .totals-row td{ font-weight:800; background:var(--surface-2) !important; border-top:2px solid var(--line); }
+
+  ul.nominations{ list-style:none; padding:0; margin:0; display:flex; flex-direction:column; gap:9px; }
+  ul.nominations li{ background:var(--accent-light); border-left:4px solid var(--accent); border-radius:var(--radius-sm); padding:14px 18px; font-size:15.5px; }
+
+  .toast{
+    position:fixed; left:50%; bottom:22px; transform:translateX(-50%) translateY(20px);
+    background:var(--ink); color:#fff; padding:14px 24px; border-radius:999px; font-size:14.5px; font-weight:600;
+    opacity:0; transition:all 0.25s cubic-bezier(.2,.8,.2,1); z-index:999; box-shadow:var(--shadow-lg); max-width:90vw;
+  }
+  .toast.show{ opacity:1; transform:translateX(-50%) translateY(0); }
+  .toast.error{ background:var(--danger); }
+  .toast.success{ background:var(--good); }
+
+  footer.foot{ text-align:center; font-size:11.5px; color:var(--muted); padding:22px 16px 44px; max-width:640px; margin:0 auto; line-height:1.6; }
+
+  @media (max-width:640px){
+    header.topbar{ padding:18px 16px 24px; }
+    #appTitle{ font-size:20px; }
+    .card{ padding:15px 12px; }
+    .protocol-table{ font-size:11px; }
+    .protocol-table th, .protocol-table td{ padding:6px 3px; }
+    .protocol-table thead th{ font-size:9.5px; letter-spacing:0; }
+  }
+</style>
+</head>
+<body>
+
+<div id="loading"><div class="spinner"></div><div>Підключення до результатів…</div></div>
+
+<div id="app">
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div>
+        <p class="brand-eyebrow">Перегляд результатів <span class="view-badge">👁 тільки перегляд</span></p>
+        <h1 id="appTitle">Результати змагань</h1>
+      </div>
+      <div class="topbar-actions">
+        <span id="cloudStatus" class="cloud-status">🔄 Підключення…</span>
+        <button class="gold" onclick="exportExcel()">⬇ Excel</button>
+      </div>
+    </div>
+  </header>
+
+  <div class="navwrap"><nav id="nav"></nav></div>
+
+  <main id="tabContent"></main>
+
+  <footer class="foot">
+    Дані оновлюються автоматично в реальному часі. Це версія лише для перегляду — тут нічого не можна редагувати.
+  </footer>
+</div>
+
+<script>
+/* ============ НАЛАШТУВАННЯ ПІДКЛЮЧЕННЯ (вшиті — нічого налаштовувати не треба) ============ */
+var CLOUD_DB_URL = 'https://protocols-355f2-default-rtdb.europe-west1.firebasedatabase.app';
+var CLOUD_CODE = 'shumsk2026';
+var CACHE_KEY = 'protocols-viewer-cache';
+
+/* ============ УТИЛІТИ ============ */
+function esc(s){
+  if(s===undefined || s===null) return '';
+  return String(s).replace(/[&<>"']/g, function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+  });
+}
+function fmt(n){
+  if(n===undefined || n===null || isNaN(n)) return '0.00';
+  return (Math.round((n+Number.EPSILON)*100)/100).toFixed(2);
+}
+function round2(n){ return Math.round((Number(n)+Number.EPSILON)*100)/100; }
+function showToast(msg, type){
+  var t = document.createElement('div');
+  t.className = 'toast' + (type ? ' '+type : '');
+  t.textContent = msg;
+  document.body.appendChild(t);
+  requestAnimationFrame(function(){ t.classList.add('show'); });
+  setTimeout(function(){ t.classList.remove('show'); setTimeout(function(){ t.remove(); }, 300); }, 2600);
+}
+
+/* ============ СТАН ============ */
+var state = null;
+var selectedTourId = null;
+var activeTab = 'overall';
+var cloudEventSource = null;
+var cloudPollTimer = null;
+var cloudStatus = 'connecting';
+
+function emptyState(){
+  return { settings: { competitionName:'Результати змагань', teams:[], zonesEnabled:false, zones:[], daysCount:2, weighTimes:['08:00','12:00','19:00'], biggestFishEnabled:false, includeBiggestFishInSum:false }, tours: [] };
+}
+
+function cloudPath(){
+  var base = CLOUD_DB_URL.replace(/\/+$/, '');
+  return base + '/protocols/' + encodeURIComponent(CLOUD_CODE) + '/state.json';
+}
+function setCloudStatus(s){
+  cloudStatus = s;
+  var el = document.getElementById('cloudStatus');
+  if(!el) return;
+  var labels = { connecting:'🔄 Підключення…', synced:'🔄 Синхронізовано', error:'⚠️ Немає з’єднання' };
+  el.textContent = labels[s] || '';
+  el.className = 'cloud-status ' + s;
+}
+function cacheState(){
+  try{ window.localStorage.setItem(CACHE_KEY, JSON.stringify(state)); }catch(e){}
+}
+function loadCachedState(){
+  try{
+    var raw = window.localStorage.getItem(CACHE_KEY);
+    if(raw){ return JSON.parse(raw); }
+  }catch(e){}
+  return null;
+}
+function applyIncomingState(data){
+  if(!data || !data.settings) return;
+  state = data;
+  cacheState();
+  setCloudStatus('synced');
+  buildNav();
+  renderTab(activeTab);
+}
+function pollCloudOnce(){
+  fetch(cloudPath()).then(function(res){ return res.json(); }).then(function(data){
+    if(data && data.settings) applyIncomingState(data);
+    else setCloudStatus('error');
+  }).catch(function(e){
+    console.error('Помилка опитування хмари', e);
+    setCloudStatus('error');
+  });
+}
+function startCloudStream(){
+  var path = cloudPath();
+  if(typeof EventSource === 'undefined'){
+    cloudPollTimer = setInterval(pollCloudOnce, 4000);
+    return;
+  }
+  try{
+    cloudEventSource = new EventSource(path);
+    cloudEventSource.addEventListener('put', function(e){
+      try{
+        var payload = JSON.parse(e.data);
+        if(payload && payload.data && payload.data.settings) applyIncomingState(payload.data);
+      }catch(err){ console.error('Помилка обробки потоку', err); }
+    });
+    cloudEventSource.onopen = function(){ setCloudStatus('synced'); };
+    cloudEventSource.onerror = function(){
+      setCloudStatus('error');
+      // резервне опитування, поки потік не відновиться
+      if(!cloudPollTimer) cloudPollTimer = setInterval(pollCloudOnce, 6000);
+    };
+  }catch(e){
+    console.error('Не вдалося відкрити потік', e);
+    cloudPollTimer = setInterval(pollCloudOnce, 4000);
+  }
+}
+
+async function init(){
+  var cached = loadCachedState();
+  state = cached || emptyState();
+  document.getElementById('appTitle').textContent = state.settings.competitionName || 'Результати змагань';
+  buildNav();
+  renderTab('overall');
+  document.getElementById('loading').style.display = 'none';
+  document.getElementById('app').style.display = 'block';
+
+  setCloudStatus('connecting');
+  try{
+    var res = await fetch(cloudPath());
+    var data = await res.json();
+    if(data && data.settings){
+      applyIncomingState(data);
+    } else {
+      setCloudStatus('error');
+      showToast('Дані ще не надходили з основного пристрою', 'error');
+    }
+  }catch(e){
+    console.error('Не вдалося отримати дані', e);
+    setCloudStatus('error');
+    if(!cached) showToast('Немає з’єднання з інтернетом', 'error');
+  }
+  startCloudStream();
+
+  window.addEventListener('online', function(){ pollCloudOnce(); });
+}
+
+/* ============ НАВІГАЦІЯ ============ */
+function buildNav(){
+  var tabs = [
+    ['tourview','Протокол туру'],
+    ['overall','Загальний залік'],
+    ['top5','5 крупних (заг.)'],
+    ['jackpot','Джекпот']
+  ];
+  if(state.settings.biggestFishEnabled) tabs.push(['biggestfish','Найбільша риба']);
+  tabs.push(['sumplaces','Сума місць']);
+  document.getElementById('nav').innerHTML = tabs.map(function(t){
+    return '<button class="navbtn" data-tab="'+t[0]+'" onclick="renderTab(\''+t[0]+'\')">'+t[1]+'</button>';
+  }).join('');
+}
+function renderTab(id){
+  activeTab = id;
+  document.querySelectorAll('.navbtn').forEach(function(b){ b.classList.toggle('active', b.dataset.tab === id); });
+  var el = document.getElementById('tabContent');
+  if(id === 'tourview') el.innerHTML = tplTourview();
+  else if(id === 'overall') el.innerHTML = tplOverall();
+  else if(id === 'top5') el.innerHTML = tplTop5();
+  else if(id === 'jackpot') el.innerHTML = tplJackpot();
+  else if(id === 'biggestfish') el.innerHTML = tplBiggestFish();
+  else if(id === 'sumplaces') el.innerHTML = tplSumPlaces();
+}
+
+/* ============ ДОПОМІЖНІ ============ */
+function tourLabel(t){
+  if(!t.date) return '(без дати) ' + (t.time||'');
+  var parts = t.date.split('-');
+  var d = parts[2], m = parts[1];
+  var timeLabel = (t.time||'').replace(':','-');
+  var label = 'сут_'+d+'.'+m+'_на '+timeLabel+' ('+t.day+' доба)';
+  if(t.isFinal) label += ' — фініш';
+  return label;
+}
+function teamById(id){ return state.settings.teams.find(function(t){ return t.id === id; }) || {name:'—', sector:''}; }
+
+/* ============ ОБЧИСЛЕННЯ (ідентичні до основного застосунку) ============ */
+function getAllFishInstances(){
+  var out = [];
+  state.tours.forEach(function(t){
+    Object.entries(t.catches||{}).forEach(function(entry){
+      var teamId = entry[0], arr = entry[1] || [];
+      arr.forEach(function(w, idx){
+        out.push({ tourId:t.id, day:t.day, teamId:teamId, idx:idx, weight:w, key:t.id+'::'+teamId+'::'+idx });
+      });
+    });
+  });
+  return out;
+}
+function teamTotals(){
+  var fish = getAllFishInstances();
+  var result = {};
+  state.settings.teams.forEach(function(tm){
+    result[tm.id] = { byDay:{}, total:{count:0, weight:0} };
+    for(var d=1; d<=state.settings.daysCount; d++) result[tm.id].byDay[d] = {count:0, weight:0};
+  });
+  fish.forEach(function(f){
+    if(!result[f.teamId]) return;
+    if(!result[f.teamId].byDay[f.day]) result[f.teamId].byDay[f.day] = {count:0, weight:0};
+    result[f.teamId].byDay[f.day].count++;
+    result[f.teamId].byDay[f.day].weight += f.weight;
+    result[f.teamId].total.count++;
+    result[f.teamId].total.weight += f.weight;
+  });
+  return result;
+}
+function rankByWeightDesc(items, key){
+  var sorted = items.slice().sort(function(a,b){ return b[key]-a[key]; });
+  var places = {};
+  var place = 0, prevWeight = null, seen = 0;
+  sorted.forEach(function(it){
+    seen++;
+    if(it[key] !== prevWeight){ place = seen; prevWeight = it[key]; }
+    places[it.id] = place;
+  });
+  return places;
+}
+function overallTable(){
+  var totals = teamTotals();
+  var rows = state.settings.teams.map(function(tm){
+    var tt = totals[tm.id];
+    return { id: tm.id, team: tm, byDay: tt.byDay, total: tt.total, avg: tt.total.count ? tt.total.weight/tt.total.count : 0 };
+  });
+  var places = rankByWeightDesc(rows.map(function(r){ return {id:r.id, weight:r.total.weight}; }), 'weight');
+  rows.forEach(function(r){ r.place = places[r.id]; });
+  return rows;
+}
+function specialNominations(){
+  var fish = getAllFishInstances();
+  var bigFish = fish.length ? fish.reduce(function(a,b){ return b.weight>a.weight?b:a; }) : null;
+  var byDay = {};
+  for(var d=1; d<=state.settings.daysCount; d++){
+    var dayFish = fish.filter(function(f){ return f.day === d; });
+    if(bigFish) dayFish = dayFish.filter(function(f){ return f.key !== bigFish.key; });
+    byDay[d] = dayFish.length ? dayFish.reduce(function(a,b){ return b.weight>a.weight?b:a; }) : null;
+  }
+  return { byDay: byDay, bigFish: bigFish };
+}
+function mergeKeys(a, b){
+  var out = {};
+  Object.keys(a||{}).forEach(function(k){ out[k] = true; });
+  Object.keys(b||{}).forEach(function(k){ out[k] = true; });
+  return out;
+}
+function jackpotExcludedKeys(){
+  var nom = specialNominations();
+  var keys = {};
+  Object.values(nom.byDay).forEach(function(n){ if(n) keys[n.key] = true; });
+  if(nom.bigFish) keys[nom.bigFish.key] = true;
+  return keys;
+}
+function biggestFishPerTeam(){
+  var fish = getAllFishInstances();
+  var byTeam = {};
+  state.settings.teams.forEach(function(tm){ byTeam[tm.id] = null; });
+  fish.forEach(function(f){
+    if(!(f.teamId in byTeam)) return;
+    if(!byTeam[f.teamId] || f.weight > byTeam[f.teamId].weight) byTeam[f.teamId] = f;
+  });
+  var rows = state.settings.teams.map(function(tm){
+    var f = byTeam[tm.id];
+    return { id: tm.id, team: tm, weight: f ? f.weight : 0, key: f ? f.key : null };
+  });
+  var places = rankByWeightDesc(rows, 'weight');
+  rows.forEach(function(r){ r.place = places[r.id]; });
+  return rows;
+}
+function biggestFishExcludeKeys(){
+  var keys = {};
+  if(!state.settings.biggestFishEnabled) return keys;
+  biggestFishPerTeam().forEach(function(r){ if(r.key) keys[r.key] = true; });
+  return keys;
+}
+function top5Table(excludeKeys){
+  var fish = getAllFishInstances();
+  var byTeam = {};
+  state.settings.teams.forEach(function(tm){ byTeam[tm.id] = []; });
+  fish.forEach(function(f){
+    if(excludeKeys && excludeKeys[f.key]) return;
+    if(!byTeam[f.teamId]) return;
+    byTeam[f.teamId].push(f.weight);
+  });
+  var rows = state.settings.teams.map(function(tm){
+    var sorted = byTeam[tm.id].slice().sort(function(a,b){ return b-a; }).slice(0,5);
+    var sum = sorted.reduce(function(a,b){ return a+b; }, 0);
+    return { id: tm.id, team: tm, top5: sorted, count: sorted.length, weight: sum };
+  });
+  var places = rankByWeightDesc(rows, 'weight');
+  rows.forEach(function(r){ r.place = places[r.id]; });
+  return rows;
+}
+function sumPlacesTable(){
+  var overall = overallTable();
+  var generalExclude = state.settings.biggestFishEnabled ? biggestFishExcludeKeys() : null;
+  var top5 = top5Table(generalExclude);
+  var overallMap = {}; overall.forEach(function(r){ overallMap[r.id] = r; });
+  var top5Map = {}; top5.forEach(function(r){ top5Map[r.id] = r; });
+  var includeBig = state.settings.biggestFishEnabled && state.settings.includeBiggestFishInSum;
+  var bigMap = {};
+  if(includeBig){ biggestFishPerTeam().forEach(function(r){ bigMap[r.id] = r; }); }
+  var rows = state.settings.teams.map(function(tm){
+    var o = overallMap[tm.id], t5 = top5Map[tm.id];
+    var row = { id: tm.id, team: tm, top5Weight: t5.weight, top5Place: t5.place, totalWeight: o.total.weight, totalPlace: o.place };
+    if(includeBig){
+      var b = bigMap[tm.id];
+      row.bigWeight = b.weight; row.bigPlace = b.place;
+      row.sumPlaces = t5.place + o.place + b.place;
+    } else {
+      row.sumPlaces = t5.place + o.place;
+    }
+    return row;
+  });
+  rows.sort(function(a,b){ return a.sumPlaces - b.sumPlaces; });
+  return rows;
+}
+
+/* ============ ШАБЛОНИ ============ */
+function tplTourview(){
+  if(state.tours.length === 0) return '<div class="card"><p class="muted">Ще немає даних із зважувань.</p></div>';
+  var sorted = state.tours.slice().sort(function(a,b){ return (a.date+a.time).localeCompare(b.date+b.time); });
+  if(!selectedTourId || !state.tours.some(function(t){return t.id===selectedTourId;})) selectedTourId = sorted[sorted.length-1].id;
+  var t = state.tours.find(function(x){ return x.id === selectedTourId; });
+  var maxCount = 1;
+  state.settings.teams.forEach(function(tm){
+    var len = (t.catches[tm.id]||[]).length;
+    if(len > maxCount) maxCount = len;
+  });
+  var colHeaders = '';
+  for(var i=1;i<=maxCount;i++) colHeaders += '<th>'+i+'</th>';
+  var rows = state.settings.teams.map(function(tm){
+    var arr = t.catches[tm.id] || [];
+    var weight = arr.reduce(function(a,b){return a+b;},0);
+    var cells = '';
+    for(var i=0;i<maxCount;i++) cells += '<td>'+(arr[i]!==undefined ? fmt(arr[i]) : '')+'</td>';
+    return '<tr><td>'+esc(tm.sector)+'</td><td>'+esc(tm.name)+'</td><td>'+arr.length+'</td><td>'+fmt(weight)+'</td>'+cells+'</tr>';
+  }).join('');
+  var options = sorted.map(function(x){
+    return '<option value="'+x.id+'" '+(x.id===t.id?'selected':'')+'>'+esc(tourLabel(x))+'</option>';
+  }).join('');
+  return '<div class="card">'
+    + '<div class="row"><div style="flex:1"><label>Оберіть тур</label><select onchange="selectedTourId=this.value; renderTab(\'tourview\')">'+options+'</select></div></div>'
+    + '<h2>'+esc(tourLabel(t))+'</h2>'
+    + '<div class="table-wrap"><table class="protocol-table">'
+    + '<thead><tr><th>Сектор</th><th>Команда</th><th>К-сть риби</th><th>Загальна вага</th>'+colHeaders+'</tr></thead>'
+    + '<tbody>'+rows+'</tbody></table></div></div>';
+}
+function tplOverall(){
+  if(state.settings.teams.length === 0) return '<div class="card"><p class="muted">Дані ще не надійшли з основного пристрою.</p></div>';
+  var rows = overallTable().slice().sort(function(a,b){ return a.place-b.place; });
+  var dayHeaders = '', dayCols = '';
+  for(var d=1; d<=state.settings.daysCount; d++){
+    dayHeaders += '<th colspan="2">'+d+' доба</th>';
+    dayCols += '<th>К-сть</th><th>Вага</th>';
+  }
+  var totals = {count:0, weight:0};
+  rows.forEach(function(r){ totals.count += r.total.count; totals.weight += r.total.weight; });
+  var body = rows.map(function(r){
+    var dayCells = '';
+    for(var d=1; d<=state.settings.daysCount; d++){
+      var dd = r.byDay[d] || {count:0,weight:0};
+      dayCells += '<td>'+dd.count+'</td><td>'+fmt(dd.weight)+'</td>';
+    }
+    return '<tr><td>'+esc(r.team.sector)+'</td><td>'+esc(r.team.name)+'</td>'+dayCells
+      + '<td>'+r.total.count+'</td><td>'+fmt(r.total.weight)+'</td>'
+      + '<td>'+fmt(r.avg)+'</td><td class="place">'+r.place+'</td></tr>';
+  }).join('');
+  var dayTotalsCells = '';
+  for(var d=1; d<=state.settings.daysCount; d++){
+    var c=0, w=0;
+    rows.forEach(function(r){ c += r.byDay[d].count; w += r.byDay[d].weight; });
+    dayTotalsCells += '<td>'+c+'</td><td>'+fmt(w)+'</td>';
+  }
+  var nom = specialNominations();
+  var nomList = '';
+  for(var d=1; d<=state.settings.daysCount; d++){
+    var n = nom.byDay[d];
+    nomList += '<li><strong>Найбільша риба '+d+'-ї доби:</strong> '+(n ? esc(teamById(n.teamId).name)+' — '+fmt(n.weight)+' кг' : '—')+'</li>';
+  }
+  nomList += '<li><strong>BIG FISH змагань:</strong> '+(nom.bigFish ? esc(teamById(nom.bigFish.teamId).name)+' — '+fmt(nom.bigFish.weight)+' кг' : '—')+'</li>';
+  return '<div class="card"><h2>Загальний залік</h2><div class="table-wrap"><table class="protocol-table">'
+    + '<thead><tr><th rowspan="2">Сектор</th><th rowspan="2">Команда</th>'+dayHeaders+'<th colspan="2">Разом</th><th rowspan="2">Середня вага</th><th rowspan="2">Місце</th></tr>'
+    + '<tr>'+dayCols+'<th>К-сть</th><th>Вага</th></tr></thead>'
+    + '<tbody>'+body
+    + '<tr class="totals-row"><td colspan="2">Разом:</td>'+dayTotalsCells+'<td>'+totals.count+'</td><td>'+fmt(totals.weight)+'</td><td>'+fmt(totals.count?totals.weight/totals.count:0)+'</td><td></td></tr>'
+    + '</tbody></table></div></div>'
+    + '<div class="card"><h2>Спеціальні номінації</h2><ul class="nominations">'+nomList+'</ul></div>';
+}
+function renderTop5Like(rows, title, note){
+  var sorted = rows.slice().sort(function(a,b){ return a.place-b.place; });
+  var body = sorted.map(function(r){
+    var cells = '';
+    for(var i=0;i<5;i++) cells += '<td>'+(r.top5[i]!==undefined ? fmt(r.top5[i]) : '—')+'</td>';
+    return '<tr><td>'+esc(r.team.sector)+'</td><td>'+esc(r.team.name)+'</td><td>'+r.count+'</td><td>'+fmt(r.weight)+'</td>'+cells+'<td class="place">'+r.place+'</td></tr>';
+  }).join('');
+  return '<div class="card"><h2>'+title+'</h2><p class="muted">'+note+'</p>'
+    + '<div class="table-wrap"><table class="protocol-table">'
+    + '<thead><tr><th>Сектор</th><th>Команда</th><th>К-сть риби</th><th>Загальна вага</th><th>1</th><th>2</th><th>3</th><th>4</th><th>5</th><th>Місце</th></tr></thead>'
+    + '<tbody>'+body+'</tbody></table></div></div>';
+}
+function tplTop5(){
+  if(state.settings.teams.length === 0) return '<div class="card"><p class="muted">Дані ще не надійшли з основного пристрою.</p></div>';
+  var excluded = state.settings.biggestFishEnabled ? biggestFishExcludeKeys() : null;
+  var note = state.settings.biggestFishEnabled
+    ? 'Враховуються 5 найбільших риб кожної команди за весь період змагань. Власна найбільша риба команди (таблиця «Найбільша риба») сюди не входить.'
+    : 'Враховуються 5 найбільших риб кожної команди за весь період змагань, без винятків.';
+  return renderTop5Like(top5Table(excluded), '5 найбільших риб — загальний залік', note);
+}
+function tplJackpot(){
+  if(state.settings.teams.length === 0) return '<div class="card"><p class="muted">Дані ще не надійшли з основного пристрою.</p></div>';
+  var excluded = mergeKeys(jackpotExcludedKeys(), state.settings.biggestFishEnabled ? biggestFishExcludeKeys() : {});
+  var nom = specialNominations();
+  var excludedDesc = [];
+  for(var d=1; d<=state.settings.daysCount; d++){
+    if(nom.byDay[d]) excludedDesc.push('найбільша риба '+d+'-ї доби ('+esc(teamById(nom.byDay[d].teamId).name)+', '+fmt(nom.byDay[d].weight)+' кг)');
+  }
+  if(nom.bigFish) excludedDesc.push('BIG FISH змагань ('+esc(teamById(nom.bigFish.teamId).name)+', '+fmt(nom.bigFish.weight)+' кг)');
+  if(state.settings.biggestFishEnabled) excludedDesc.push('найбільша риба кожної команди (таблиця «Найбільша риба»)');
+  return renderTop5Like(top5Table(excluded), 'Джекпот — 5 найбільших риб (без спеціальних номінацій)',
+    'З підрахунку виключені риби, що вже увійшли у спеціальні номінації: '+(excludedDesc.join('; ')||'—')+'.');
+}
+function tplBiggestFish(){
+  if(state.settings.teams.length === 0) return '<div class="card"><p class="muted">Дані ще не надійшли з основного пристрою.</p></div>';
+  var rows = biggestFishPerTeam().slice().sort(function(a,b){ return a.place-b.place; });
+  var body = rows.map(function(r){
+    return '<tr><td>'+esc(r.team.sector)+'</td><td>'+esc(r.team.name)+'</td><td>'+(r.key ? fmt(r.weight) : '—')+'</td><td class="place">'+r.place+'</td></tr>';
+  }).join('');
+  return '<div class="card"><h2>Найбільша риба команди</h2>'
+    + '<p class="muted">Найбільша впіймана риба кожної команди за весь період змагань.</p>'
+    + '<div class="table-wrap"><table class="protocol-table">'
+    + '<thead><tr><th>Сектор</th><th>Команда</th><th>Вага, кг</th><th>Місце</th></tr></thead>'
+    + '<tbody>'+body+'</tbody></table></div></div>';
+}
+function tplSumPlaces(){
+  if(state.settings.teams.length === 0) return '<div class="card"><p class="muted">Дані ще не надійшли з основного пристрою.</p></div>';
+  var rows = sumPlacesTable();
+  var includeBig = state.settings.biggestFishEnabled && state.settings.includeBiggestFishInSum;
+  var body = rows.map(function(r){
+    var bigCells = includeBig ? ('<td>'+fmt(r.bigWeight)+'</td><td>'+r.bigPlace+'</td>') : '';
+    return '<tr><td>'+esc(r.team.sector)+'</td><td>'+esc(r.team.name)+'</td>'
+      + '<td>'+fmt(r.top5Weight)+'</td><td>'+r.top5Place+'</td>'
+      + bigCells
+      + '<td>'+fmt(r.totalWeight)+'</td><td>'+r.totalPlace+'</td>'
+      + '<td class="place">'+r.sumPlaces+'</td></tr>';
+  }).join('');
+  var bigHeader = includeBig ? '<th>Найбільша риба, вага</th><th>Найбільша риба, місце</th>' : '';
+  var title = includeBig ? 'Сума місць (загальна вага + 5 крупних + 1 найбільша риба)' : 'Сума місць (загальна вага + 5 крупних)';
+  return '<div class="card"><h2>'+title+'</h2><p class="muted">Менша сума місць — вищий підсумковий результат.</p>'
+    + '<div class="table-wrap"><table class="protocol-table">'
+    + '<thead><tr><th>Сектор</th><th>Команда</th><th>5 крупних, вага</th><th>5 крупних, місце</th>'+bigHeader+'<th>Загальна вага</th><th>Загальна вага, місце</th><th>Сума місць</th></tr></thead>'
+    + '<tbody>'+body+'</tbody></table></div></div>';
+}
+
+/* ============ ЕКСПОРТ В EXCEL ============ */
+function uniqueSheetName(wb, name){
+  name = String(name).replace(/[\\/*?:\[\]]/g,'_').slice(0,31);
+  var final = name || 'Sheet', i = 1;
+  while(wb.SheetNames.indexOf(final) !== -1){ i++; final = (name.slice(0, 28) + '_' + i); }
+  return final;
+}
+function appendTop5Sheet(wb, rows, name){
+  var sorted = rows.slice().sort(function(a,b){ return a.place-b.place; });
+  var aoa = [['Сектор','Команда','К-сть риби','Загальна вага','1','2','3','4','5','Місце']];
+  sorted.forEach(function(r){
+    var cells = [];
+    for(var i=0;i<5;i++) cells.push(r.top5[i]!==undefined ? round2(r.top5[i]) : '');
+    aoa.push([r.team.sector, r.team.name, r.count, round2(r.weight)].concat(cells, [r.place]));
+  });
+  var ws = XLSX.utils.aoa_to_sheet(aoa);
+  XLSX.utils.book_append_sheet(wb, ws, uniqueSheetName(wb, name));
+}
+function exportExcel(){
+  if(typeof XLSX === 'undefined'){ showToast('Не вдалося завантажити модуль Excel.', 'error'); return; }
+  if(state.settings.teams.length === 0){ showToast('Дані ще не надійшли.', 'error'); return; }
+  try{
+    var wb = XLSX.utils.book_new();
+    var rows = overallTable().slice().sort(function(a,b){ return a.place-b.place; });
+    var header2 = ['Сектор','Команда'];
+    for(var d=1; d<=state.settings.daysCount; d++){ header2.push(d+' доба К-сть', d+' доба Вага'); }
+    header2.push('Разом К-сть','Разом Вага','Середня вага','Місце');
+    var aoa2 = [header2];
+    rows.forEach(function(r){
+      var row = [r.team.sector, r.team.name];
+      for(var d=1; d<=state.settings.daysCount; d++){ row.push(r.byDay[d].count, round2(r.byDay[d].weight)); }
+      row.push(r.total.count, round2(r.total.weight), round2(r.avg), r.place);
+      aoa2.push(row);
+    });
+    var ws2 = XLSX.utils.aoa_to_sheet(aoa2);
+    XLSX.utils.book_append_sheet(wb, ws2, uniqueSheetName(wb,'Загальний'));
+
+    var generalExclude = state.settings.biggestFishEnabled ? biggestFishExcludeKeys() : null;
+    appendTop5Sheet(wb, top5Table(generalExclude), '5 крупних (загальна)');
+    appendTop5Sheet(wb, top5Table(mergeKeys(jackpotExcludedKeys(), state.settings.biggestFishEnabled ? biggestFishExcludeKeys() : {})), '5 крупних (Джекпот)');
+
+    if(state.settings.biggestFishEnabled){
+      var bigRows = biggestFishPerTeam().slice().sort(function(a,b){ return a.place-b.place; });
+      var aoaBig = [['Сектор','Команда','Найбільша риба, вага','Місце']];
+      bigRows.forEach(function(r){ aoaBig.push([r.team.sector, r.team.name, r.key ? round2(r.weight) : '', r.place]); });
+      var wsBig = XLSX.utils.aoa_to_sheet(aoaBig);
+      XLSX.utils.book_append_sheet(wb, wsBig, uniqueSheetName(wb,'Найбільша риба'));
+    }
+
+    var includeBig = state.settings.biggestFishEnabled && state.settings.includeBiggestFishInSum;
+    var sumRows = sumPlacesTable();
+    var header3 = ['Сектор','Команда','5 крупних вага','5 крупних місце'];
+    if(includeBig) header3.push('Найбільша риба вага','Найбільша риба місце');
+    header3.push('Загальна вага','Загальна вага місце','Сума місць');
+    var aoa3 = [header3];
+    sumRows.forEach(function(r){
+      var row = [r.team.sector, r.team.name, round2(r.top5Weight), r.top5Place];
+      if(includeBig) row.push(round2(r.bigWeight), r.bigPlace);
+      row.push(round2(r.totalWeight), r.totalPlace, r.sumPlaces);
+      aoa3.push(row);
+    });
+    var ws3 = XLSX.utils.aoa_to_sheet(aoa3);
+    XLSX.utils.book_append_sheet(wb, ws3, uniqueSheetName(wb,'Сума місць'));
+
+    var fname = (state.settings.competitionName || 'Результати').replace(/[\\/:*?"<>|]/g,'_') + '.xlsx';
+    XLSX.writeFile(wb, fname);
+    showToast('Файл Excel сформовано', 'success');
+  }catch(e){
+    console.error(e);
+    showToast('Помилка експорту: ' + e.message, 'error');
+  }
+}
+
+init();
+</script>
+</body>
+</html>
